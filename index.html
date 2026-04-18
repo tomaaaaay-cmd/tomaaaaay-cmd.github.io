@@ -1,0 +1,400 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="description" content="LiftLog — weightlifting progress tracker with per-user sync">
+<meta name="theme-color" content="#1a1a1a">
+<title>LiftLog</title>
+<link rel="manifest" href="manifest.json">
+<style>
+@import url('https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600;700&family=Barlow+Condensed:wght@600;700&display=swap');
+*{box-sizing:border-box;margin:0;padding:0;}
+:root{
+  --olive:#5a6e2c;--olive-dark:#3d4c1a;--olive-light:#8fa84a;--olive-bg:#f0f2e8;
+  --black:#1a1a1a;--surface:#ffffff;--surface2:#f5f5f0;
+  --border:#d4d8c4;--muted:#767c5e;--text:#1a1a1a;--font:'Barlow',sans-serif;
+}
+body{font-family:var(--font);background:transparent;color:var(--text);}
+.app{max-width:480px;margin:0 auto;background:var(--black);min-height:600px;border-radius:12px;overflow:hidden;}
+.topbar{background:var(--black);padding:16px 16px 0;border-bottom:1px solid #2e2e2e;}
+.logo{font-family:'Barlow Condensed',sans-serif;font-size:26px;font-weight:700;color:#fff;letter-spacing:1px;display:flex;align-items:center;gap:8px;}
+.logo-dot{width:10px;height:10px;border-radius:50%;background:var(--olive-light);}
+.user-row{display:flex;gap:6px;padding:12px 0 0;}
+.ubtn{flex:1;padding:8px;border-radius:8px 8px 0 0;border:none;font-family:var(--font);font-size:13px;font-weight:600;cursor:pointer;transition:all 0.15s;color:#aaa;background:#2a2a2a;}
+.ubtn.active{background:var(--olive);color:#fff;}
+.tabs{display:flex;background:#111;border-bottom:1px solid #2e2e2e;}
+.tab{flex:1;padding:11px;text-align:center;font-size:12px;font-weight:600;cursor:pointer;color:#666;letter-spacing:0.5px;text-transform:uppercase;border-bottom:2px solid transparent;transition:all 0.15s;}
+.tab.active{color:var(--olive-light);border-bottom-color:var(--olive-light);}
+.body{background:#f5f4ef;padding:14px;}
+.card{background:#fff;border:1px solid #e0dfd8;border-radius:10px;padding:14px 16px;margin-bottom:10px;}
+.card-title{font-size:14px;font-weight:600;color:var(--black);margin-bottom:10px;}
+.row-hdr{display:grid;grid-template-columns:28px minmax(0,1fr) minmax(0,1fr) 28px;gap:6px;margin-bottom:4px;}
+.col-lbl{font-size:11px;font-weight:600;color:#999;text-transform:uppercase;letter-spacing:0.4px;}
+.set-row{display:grid;grid-template-columns:28px minmax(0,1fr) minmax(0,1fr) 28px;gap:6px;align-items:center;margin-bottom:6px;}
+.set-num{font-size:13px;font-weight:700;color:var(--olive);text-align:center;}
+input[type=number],input[type=text],select{width:100%;padding:8px 10px;border-radius:6px;border:1px solid #ddd;background:#fafaf8;font-family:var(--font);font-size:14px;color:var(--black);}
+input:focus,select:focus{outline:none;border-color:var(--olive);box-shadow:0 0 0 2px rgba(90,110,44,0.12);}
+.ix-btn{background:none;border:none;cursor:pointer;color:#bbb;font-size:18px;padding:0;line-height:1;display:flex;align-items:center;justify-content:center;transition:color 0.1s;}
+.ix-btn:hover{color:#e24b4a;}
+.btn-add-set{background:none;border:1px solid #ccc;border-radius:6px;padding:5px 10px;font-family:var(--font);font-size:12px;font-weight:600;cursor:pointer;color:#888;}
+.btn-save{width:100%;padding:12px;border:none;border-radius:8px;background:var(--olive);color:#fff;font-family:var(--font);font-size:15px;font-weight:700;cursor:pointer;margin-top:10px;letter-spacing:0.3px;transition:opacity 0.15s;}
+.btn-save:hover{opacity:0.9;}
+.btn-save:disabled{opacity:0.5;cursor:default;}
+.prev-box{background:#f0f2e8;border:1px solid #d4d8c4;border-radius:8px;padding:10px 14px;margin-bottom:10px;display:flex;justify-content:space-between;align-items:center;}
+.prev-label{font-size:11px;font-weight:600;color:var(--muted);text-transform:uppercase;letter-spacing:0.4px;margin-bottom:2px;}
+.prev-text{font-size:13px;font-weight:600;color:var(--olive-dark);}
+.pr-badge{background:var(--olive);color:#fff;font-size:11px;font-weight:700;padding:4px 9px;border-radius:20px;white-space:nowrap;}
+.ex-row{display:flex;gap:8px;margin-bottom:10px;align-items:center;}
+.ex-row select{flex:1;}
+.hist-item{border-bottom:1px solid #eeede8;padding:10px 0;}
+.hist-item:last-child{border-bottom:none;}
+.hist-date{font-size:12px;color:#888;font-weight:500;margin-bottom:5px;}
+.chips{display:flex;flex-wrap:wrap;gap:5px;}
+.chip{background:#f0f2e8;border:1px solid #d4d8c4;border-radius:20px;padding:3px 10px;font-size:12px;font-weight:600;color:var(--olive-dark);font-family:'Barlow Condensed',sans-serif;letter-spacing:0.3px;}
+.manage-item{display:flex;justify-content:space-between;align-items:center;padding:9px 0;border-bottom:1px solid #eeede8;}
+.manage-item:last-child{border-bottom:none;}
+.add-row{display:flex;gap:8px;margin-top:10px;}
+.add-row input{flex:1;}
+.btn-sm{padding:8px 14px;border:1px solid #ccc;border-radius:6px;background:none;font-family:var(--font);font-size:13px;font-weight:600;cursor:pointer;color:#555;white-space:nowrap;}
+.btn-sm:hover{border-color:var(--olive);color:var(--olive);}
+.empty{text-align:center;padding:32px 20px;color:#aaa;font-size:14px;}
+.sync-bar{background:#1a1a1a;padding:8px 16px;display:flex;align-items:center;justify-content:space-between;}
+.sync-txt{font-size:11px;color:#888;}
+.sync-dot{width:7px;height:7px;border-radius:50%;background:#5a6e2c;display:inline-block;margin-right:5px;}
+.sync-dot.pending{background:#ba7517;}
+.install-banner{background:var(--olive-dark);color:#fff;padding:10px 16px;display:flex;align-items:center;justify-content:space-between;font-size:13px;font-weight:500;}
+.install-banner .x{background:none;border:none;color:#adc978;cursor:pointer;font-size:18px;padding:0;}
+.btn-install{background:#fff;color:var(--olive-dark);border:none;border-radius:6px;padding:5px 12px;font-size:12px;font-weight:700;cursor:pointer;font-family:var(--font);}
+.hidden{display:none!important;}
+.vol-txt{font-size:11px;color:#999;margin-top:2px;}
+.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border-width:0;}
+</style>
+</head>
+<body>
+
+<h2 class="sr-only">LiftLog — weightlifting progress tracker with per-user sync</h2>
+
+<div class="app" id="app">
+
+  <div class="install-banner" id="install-banner">
+    <span>Add to home screen for app experience</span>
+    <div style="display:flex;gap:8px;align-items:center;">
+      <button class="btn-install" onclick="showInstallHelp()">How?</button>
+      <button class="x" onclick="document.getElementById('install-banner').classList.add('hidden')">×</button>
+    </div>
+  </div>
+
+  <div class="topbar">
+    <div class="logo"><div class="logo-dot"></div>LiftLog</div>
+    <div class="user-row">
+      <button class="ubtn active" id="btn-tommy" onclick="switchUser('Tommy')">Tommy</button>
+      <button class="ubtn" id="btn-wife" onclick="switchUser('Wife')">Wife</button>
+    </div>
+  </div>
+
+  <div class="tabs">
+    <div class="tab active" onclick="showTab('log')">Log</div>
+    <div class="tab" onclick="showTab('history')">History</div>
+    <div class="tab" onclick="showTab('manage')">Exercises</div>
+  </div>
+
+  <div class="sync-bar">
+    <span><span class="sync-dot" id="sync-dot"></span><span id="sync-label" class="sync-txt">Local storage — see below to sync</span></span>
+  </div>
+
+  <div class="body">
+
+    <div id="tab-log">
+      <div class="ex-row">
+        <select id="exercise-picker" onchange="onExerciseChange()">
+          <option value="">— Select exercise —</option>
+        </select>
+      </div>
+      <div id="prev-display" class="prev-box hidden">
+        <div>
+          <div class="prev-label">Last session</div>
+          <div class="prev-text" id="prev-text">—</div>
+        </div>
+        <div class="pr-badge" id="pr-badge"></div>
+      </div>
+      <div class="card">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">
+          <span class="card-title" style="margin:0;">Sets</span>
+          <button class="btn-add-set" onclick="addSetRow()">+ Set</button>
+        </div>
+        <div class="row-hdr">
+          <span class="col-lbl">#</span>
+          <span class="col-lbl">kg</span>
+          <span class="col-lbl">Reps</span>
+          <span></span>
+        </div>
+        <div id="sets-container"></div>
+      </div>
+      <button class="btn-save" onclick="saveWorkout()" id="save-btn">Save workout</button>
+    </div>
+
+    <div id="tab-history" class="hidden">
+      <div class="ex-row">
+        <select id="history-picker" onchange="renderHistory()">
+          <option value="">— Select exercise —</option>
+        </select>
+      </div>
+      <div id="history-list"></div>
+    </div>
+
+    <div id="tab-manage" class="hidden">
+      <div class="card">
+        <div class="card-title">My exercises</div>
+        <div id="exercise-list"></div>
+        <div class="add-row">
+          <input type="text" id="new-ex-input" placeholder="Add exercise…" />
+          <button class="btn-sm" onclick="addExercise()">Add</button>
+        </div>
+      </div>
+      <div class="card" style="margin-top:0;">
+        <div class="card-title" style="margin-bottom:6px;">Sync across devices</div>
+        <div style="font-size:13px;color:#666;line-height:1.6;margin-bottom:12px;">
+          To sync between Tommy's Android and Wife's iPhone, save this app's data using a free cloud storage link. Tap the button below to get setup instructions.
+        </div>
+        <button class="btn-save" style="margin-top:0;" onclick="showSyncHelp()">How to sync ↗</button>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<div id="install-modal" class="hidden" style="margin-top:10px;">
+<div style="background:#fff;border:1px solid #e0dfd8;border-radius:10px;padding:16px;max-width:480px;margin:0 auto;">
+  <div style="font-weight:700;font-size:15px;margin-bottom:12px;color:#1a1a1a;">Add LiftLog to your home screen</div>
+  <div style="font-size:13px;color:#555;line-height:1.7;">
+    <strong style="color:#3d4c1a;">On iPhone (Safari):</strong><br>
+    1. Open this page in Safari<br>
+    2. Tap the Share button (box with arrow)<br>
+    3. Scroll down and tap "Add to Home Screen"<br>
+    4. Tap "Add" — done!<br><br>
+    <strong style="color:#3d4c1a;">On Android (Chrome):</strong><br>
+    1. Open this page in Chrome<br>
+    2. Tap the three-dot menu (top right)<br>
+    3. Tap "Add to Home screen"<br>
+    4. Tap "Add" — done!
+  </div>
+  <button class="btn-save" style="margin-top:12px;" onclick="document.getElementById('install-modal').classList.add('hidden')">Got it</button>
+</div>
+</div>
+
+<div id="sync-modal" class="hidden" style="margin-top:10px;">
+<div style="background:#fff;border:1px solid #e0dfd8;border-radius:10px;padding:16px;max-width:480px;margin:0 auto;">
+  <div style="font-weight:700;font-size:15px;margin-bottom:12px;color:#1a1a1a;">Sync between your phones</div>
+  <div style="font-size:13px;color:#555;line-height:1.7;">
+    Because this runs in a browser, the easiest free sync option is <strong style="color:#3d4c1a;">JSONBin.io</strong> — a free cloud database.<br><br>
+    <strong style="color:#3d4c1a;">Steps:</strong><br>
+    1. Go to <strong>jsonbin.io</strong> and create a free account<br>
+    2. Create a new "bin" — copy the Bin ID<br>
+    3. Copy your API key from the dashboard<br>
+    4. Come back here and tap "Enter sync keys" below<br><br>
+    Once set up, both phones will read and write to the same cloud bin. Each user's data stays separate inside it.
+  </div>
+  <div style="margin-top:12px;display:flex;flex-direction:column;gap:8px;">
+    <input type="text" id="bin-id-input" placeholder="JSONBin Bin ID (e.g. 64abc...)" />
+    <input type="text" id="api-key-input" placeholder="JSONBin API Key (X-Master-Key)" />
+  </div>
+  <button class="btn-save" style="margin-top:10px;" onclick="saveSyncKeys()">Save sync keys</button>
+  <button class="btn-sm" style="width:100%;margin-top:6px;text-align:center;" onclick="document.getElementById('sync-modal').classList.add('hidden')">Cancel</button>
+</div>
+</div>
+
+<script>
+let currentUser = 'Tommy';
+let setCount = 0;
+let syncKeys = JSON.parse(localStorage.getItem('liftlog_sync') || 'null');
+const DEFAULTS = { exercises:['Bench press','Squat','Deadlift','Overhead press','Barbell row','Bicep curl'], history:{} };
+
+function getLocal(user){ try{ return JSON.parse(localStorage.getItem('ll_'+user)||'null'); }catch{ return null; } }
+function setLocal(user,d){ localStorage.setItem('ll_'+user,JSON.stringify(d)); }
+function getState(user){ const d=getLocal(user); if(d) return d; setLocal(user,JSON.parse(JSON.stringify(DEFAULTS))); return JSON.parse(JSON.stringify(DEFAULTS)); }
+
+async function cloudLoad(){
+  if(!syncKeys) return null;
+  try{
+    const r = await fetch('https://api.jsonbin.io/v3/b/'+syncKeys.bin+'/latest',{headers:{'X-Master-Key':syncKeys.key}});
+    if(!r.ok) return null;
+    const j = await r.json();
+    return j.record || null;
+  }catch{ return null; }
+}
+async function cloudSave(allData){
+  if(!syncKeys) return;
+  try{
+    await fetch('https://api.jsonbin.io/v3/b/'+syncKeys.bin,{method:'PUT',headers:{'Content-Type':'application/json','X-Master-Key':syncKeys.key},body:JSON.stringify(allData)});
+    setSyncStatus(true);
+  }catch{ setSyncStatus(false); }
+}
+function setSyncStatus(ok){
+  document.getElementById('sync-dot').className='sync-dot'+(ok?'':' pending');
+  document.getElementById('sync-label').textContent=ok?'Synced to cloud':'Sync error — check keys';
+}
+
+async function init(){
+  if(syncKeys){
+    document.getElementById('sync-label').textContent='Loading from cloud…';
+    const cloud = await cloudLoad();
+    if(cloud){
+      ['Tommy','Wife'].forEach(u=>{ if(cloud[u]) setLocal(u,cloud[u]); });
+      setSyncStatus(true);
+    } else { setSyncStatus(false); }
+  }
+  refreshAll();
+}
+
+async function saveWorkout(){
+  const ex = document.getElementById('exercise-picker').value;
+  if(!ex){ alert('Select an exercise first.'); return; }
+  const rows = document.querySelectorAll('#sets-container .set-row');
+  const sets=[];
+  rows.forEach(row=>{
+    const id=row.dataset.id;
+    const w=parseFloat(document.getElementById('w-'+id)?.value);
+    const r=parseInt(document.getElementById('r-'+id)?.value);
+    if(!isNaN(w)&&!isNaN(r)&&w>0&&r>0) sets.push({weight:w,reps:r});
+  });
+  if(!sets.length){ alert('Enter at least one complete set.'); return; }
+  const state=getState(currentUser);
+  if(!state.history[ex]) state.history[ex]=[];
+  state.history[ex].push({date:new Date().toISOString(),sets});
+  setLocal(currentUser,state);
+  const btn=document.getElementById('save-btn');
+  btn.textContent='Saving…'; btn.disabled=true;
+  if(syncKeys){
+    const allData={'Tommy':getState('Tommy'),'Wife':getState('Wife')};
+    await cloudSave(allData);
+  }
+  btn.textContent='Saved!';
+  setTimeout(()=>{ btn.textContent='Save workout'; btn.disabled=false; },1500);
+  onExerciseChange();
+}
+
+function switchUser(u){
+  currentUser=u;
+  document.getElementById('btn-tommy').classList.toggle('active',u==='Tommy');
+  document.getElementById('btn-wife').classList.toggle('active',u==='Wife');
+  refreshAll();
+}
+function showTab(t){
+  ['log','history','manage'].forEach(n=>{
+    document.getElementById('tab-'+n).classList.toggle('hidden',n!==t);
+    document.querySelectorAll('.tab')[['log','history','manage'].indexOf(n)].classList.toggle('active',n===t);
+  });
+  if(t==='history') renderHistory();
+  if(t==='manage') renderManage();
+}
+function refreshAll(){ populatePickers(); onExerciseChange(); renderManage(); renderHistory(); }
+function populatePickers(){
+  const state=getState(currentUser);
+  ['exercise-picker','history-picker'].forEach(id=>{
+    const sel=document.getElementById(id); const cur=sel.value;
+    sel.innerHTML='<option value="">— Select exercise —</option>';
+    state.exercises.forEach(ex=>{ const o=document.createElement('option'); o.value=ex; o.textContent=ex; if(ex===cur) o.selected=true; sel.appendChild(o); });
+  });
+}
+function onExerciseChange(){
+  const ex=document.getElementById('exercise-picker').value;
+  const prev=document.getElementById('prev-display');
+  if(!ex){ prev.classList.add('hidden'); resetSets(); return; }
+  const state=getState(currentUser);
+  const hist=(state.history[ex]||[]);
+  if(hist.length>0){
+    const last=hist[hist.length-1];
+    document.getElementById('prev-text').textContent=last.sets.map(s=>s.weight+'kg×'+s.reps).join(' · ');
+    const pr=getPR(ex,state);
+    document.getElementById('pr-badge').textContent='PR '+pr.weight+'kg×'+pr.reps;
+    prev.classList.remove('hidden');
+  } else { prev.classList.add('hidden'); }
+  resetSets();
+}
+function getPR(ex,state){
+  let best={weight:0,reps:0};
+  (state.history[ex]||[]).forEach(s=>s.sets.forEach(set=>{ if(set.weight>best.weight||(set.weight===best.weight&&set.reps>best.reps)) best=set; }));
+  return best;
+}
+function resetSets(){
+  setCount=0; document.getElementById('sets-container').innerHTML='';
+  addSetRow(); addSetRow(); addSetRow();
+}
+function addSetRow(){
+  setCount++;
+  const state=getState(currentUser);
+  const ex=document.getElementById('exercise-picker').value;
+  let ph={w:'',r:''};
+  if(ex){
+    const hist=(state.history[ex]||[]);
+    if(hist.length>0){
+      const ls=hist[hist.length-1].sets; const i=setCount-1;
+      const ref=i<ls.length?ls[i]:ls[ls.length-1];
+      if(ref){ ph.w=ref.weight; ph.r=ref.reps; }
+    }
+  }
+  const row=document.createElement('div');
+  row.className='set-row'; row.dataset.id=setCount;
+  row.innerHTML=`<div class="set-num">${setCount}</div>
+    <input type="number" id="w-${setCount}" placeholder="${ph.w||'—'}" min="0" step="2.5" style="font-weight:600;" />
+    <input type="number" id="r-${setCount}" placeholder="${ph.r||'—'}" min="0" style="font-weight:600;" />
+    <button class="ix-btn" onclick="this.closest('.set-row').remove()">×</button>`;
+  document.getElementById('sets-container').appendChild(row);
+}
+function renderHistory(){
+  const ex=document.getElementById('history-picker').value;
+  const list=document.getElementById('history-list');
+  if(!ex){ list.innerHTML='<div class="empty">Select an exercise to see history</div>'; return; }
+  const state=getState(currentUser);
+  const hist=[...(state.history[ex]||[])].reverse();
+  if(!hist.length){ list.innerHTML='<div class="empty">No sessions logged yet for this exercise</div>'; return; }
+  list.innerHTML=hist.map(s=>{
+    const d=new Date(s.date);
+    const ds=d.toLocaleDateString('en-GB',{weekday:'short',day:'numeric',month:'short'});
+    const vol=Math.round(s.sets.reduce((a,x)=>a+x.weight*x.reps,0));
+    const chips=s.sets.map((x,i)=>`<span class="chip">${i+1}: ${x.weight}kg×${x.reps}</span>`).join('');
+    return `<div class="hist-item"><div style="display:flex;justify-content:space-between;align-items:baseline;margin-bottom:5px;"><span class="hist-date">${ds}</span><span style="font-size:11px;color:#aaa;">Vol: ${vol}kg</span></div><div class="chips">${chips}</div></div>`;
+  }).join('');
+}
+function renderManage(){
+  const state=getState(currentUser);
+  const list=document.getElementById('exercise-list');
+  if(!state.exercises.length){ list.innerHTML='<div class="empty">No exercises — add one below</div>'; return; }
+  list.innerHTML=state.exercises.map((ex,i)=>`<div class="manage-item"><span style="font-size:14px;font-weight:500;">${ex}</span><button class="ix-btn" onclick="deleteExercise(${i})">×</button></div>`).join('');
+}
+function addExercise(){
+  const inp=document.getElementById('new-ex-input');
+  const name=inp.value.trim(); if(!name) return;
+  const state=getState(currentUser);
+  if(!state.exercises.includes(name)){ state.exercises.push(name); setLocal(currentUser,state); inp.value=''; renderManage(); populatePickers(); }
+}
+function deleteExercise(i){
+  const state=getState(currentUser);
+  state.exercises.splice(i,1); setLocal(currentUser,state); renderManage(); populatePickers();
+}
+function showInstallHelp(){ document.getElementById('install-modal').classList.remove('hidden'); }
+function showSyncHelp(){
+  if(syncKeys){
+    document.getElementById('bin-id-input').value=syncKeys.bin;
+    document.getElementById('api-key-input').value=syncKeys.key;
+  }
+  document.getElementById('sync-modal').classList.remove('hidden');
+}
+function saveSyncKeys(){
+  const bin=document.getElementById('bin-id-input').value.trim();
+  const key=document.getElementById('api-key-input').value.trim();
+  if(!bin||!key){ alert('Please enter both the Bin ID and API key.'); return; }
+  syncKeys={bin,key};
+  localStorage.setItem('liftlog_sync',JSON.stringify(syncKeys));
+  document.getElementById('sync-modal').classList.add('hidden');
+  document.getElementById('sync-label').textContent='Sync configured — saving…';
+  const allData={'Tommy':getState('Tommy'),'Wife':getState('Wife')};
+  cloudSave(allData);
+}
+document.getElementById('new-ex-input').addEventListener('keydown',e=>{ if(e.key==='Enter') addExercise(); });
+init();
+</script>
+
+</body>
+</html>
