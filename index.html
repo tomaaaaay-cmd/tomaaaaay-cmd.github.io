@@ -97,6 +97,7 @@ input:focus,select:focus{outline:none;border-color:var(--olive);box-shadow:0 0 0
   </div>
   <div class="sync-bar">
     <span><span class="sync-dot" id="sync-dot"></span><span id="sync-label" class="sync-txt">Local storage</span></span>
+    <button id="sync-now-btn" onclick="syncNow()" style="background:none;border:1px solid #444;border-radius:5px;padding:3px 9px;font-family:var(--font);font-size:11px;font-weight:600;cursor:pointer;color:#888;display:none;">↻ Sync now</button>
   </div>
   <div class="muscle-tabs" id="muscle-tabs">
     <div class="mtab active" onclick="switchMuscle('Back')">Back</div>
@@ -130,6 +131,13 @@ input:focus,select:focus{outline:none;border-color:var(--olive);box-shadow:0 0 0
         </div>
         <button class="btn-save" style="margin-top:0;" onclick="showSyncHelp()">How to sync ↗</button>
       </div>
+      <div class="card" style="margin-top:0;border-color:#c8d8f0;">
+        <div class="card-title" style="color:#2255aa;margin-bottom:6px;">🔍 Recover lost data</div>
+        <div style="font-size:13px;color:#666;line-height:1.6;margin-bottom:12px;">
+          If sessions disappeared after an update, tap below to scan for any data saved under old key names and restore it.
+        </div>
+        <button class="btn-sm" style="width:100%;border-color:#2255aa;color:#2255aa;" onclick="openRecoveryModal()">Scan for lost sessions</button>
+      </div>
       <div class="card" style="margin-top:0;border-color:#fdd;">
         <div class="card-title" style="color:#c0392b;margin-bottom:6px;">Danger zone</div>
         <div style="font-size:13px;color:#666;line-height:1.6;margin-bottom:12px;">
@@ -156,6 +164,18 @@ input:focus,select:focus{outline:none;border-color:var(--olive);box-shadow:0 0 0
     <div class="modal-actions">
       <button class="btn-cancel" onclick="closeEditModal()">Cancel</button>
       <button class="btn-save" onclick="saveEditSession()">Save changes</button>
+    </div>
+  </div>
+</div>
+
+<!-- Recovery modal -->
+<div class="modal-overlay hidden" id="recovery-modal">
+  <div class="modal-box">
+    <div class="modal-title">🔍 Data Recovery</div>
+    <div id="recovery-content" style="font-size:13px;color:#444;line-height:1.7;"></div>
+    <div class="modal-actions" style="margin-top:14px;">
+      <button class="btn-cancel" onclick="closeRecoveryModal()">Close</button>
+      <button class="btn-save" id="recovery-restore-btn" onclick="restoreRecoveredData()" style="display:none;margin-top:0;flex:1;">Restore all</button>
     </div>
   </div>
 </div>
@@ -189,6 +209,40 @@ input:focus,select:focus{outline:none;border-color:var(--olive);box-shadow:0 0 0
 // ─────────────────────────────────────────────────────────────────────────────
 const USER_DISPLAY = { tommy: 'Tommy', wife: 'قطة' };
 const USERS = ['tommy', 'wife'];
+
+// ── One-time migration from old key scheme ───────────────────────────────────
+// Old keys: ll_hist_Tommy  /  ll_hist_قطة
+// New keys: ll_hist_tommy  /  ll_hist_wife
+function migrateOldData() {
+  const OLD_MAP = { Tommy: 'tommy', 'قطة': 'wife' };
+  let migrated = false;
+
+  Object.entries(OLD_MAP).forEach(([oldName, newKey]) => {
+    const oldKey = 'll_hist_' + oldName;
+    const newStorageKey = histKey(newKey);
+
+    // Only migrate if old data exists and new slot is empty
+    const oldRaw = localStorage.getItem(oldKey);
+    const newRaw = localStorage.getItem(newStorageKey);
+    if (!oldRaw) return;
+
+    let oldData;
+    try { oldData = JSON.parse(oldRaw); } catch { return; }
+    if (!oldData || !Object.keys(oldData).length) return;
+
+    if (!newRaw || newRaw === '{}' || newRaw === 'null') {
+      // Stamp IDs onto any sessions that lack them
+      Object.values(oldData).forEach(arr => {
+        if (!Array.isArray(arr)) return;
+        arr.forEach(s => { if (!s.id) s.id = makeId(); });
+      });
+      localStorage.setItem(newStorageKey, JSON.stringify(oldData));
+      migrated = true;
+      console.log('LiftLog: migrated', oldName, '→', newKey);
+    }
+  });
+  return migrated;
+}
 
 let currentUser   = 'tommy'; // safe key
 let currentMuscle = 'Back';
@@ -277,7 +331,11 @@ async function init() {
   loadSyncKeys();
   initSharedExercises();
 
+  // Migrate any data saved by the old version before touching cloud
+  migrateOldData();
+
   if (syncKeys) {
+    document.getElementById('sync-now-btn').style.display = 'block';
     document.getElementById('sync-label').textContent = 'Loading from cloud…';
     const cloud = await cloudLoad();
     if (cloud) {
@@ -287,6 +345,42 @@ async function init() {
       setSyncStatus(true);
     } else { setSyncStatus(false); }
   }
+  refreshAll();
+}
+
+async function syncNow() {
+  const btn = document.getElementById('sync-now-btn');
+  btn.textContent = '↻ Syncing…'; btn.disabled = true;
+  if (syncKeys) {
+    // Push local → cloud first, then pull cloud → local
+    // This ensures both phones converge on the same data
+    const cloud = await cloudLoad();
+    if (cloud) {
+      // Merge: for each user, keep whichever copy has more sessions per exercise
+      ['tommy','wife'].forEach(u => {
+        const local = getHistory(u);
+        const remote = cloud['hist_' + u] || {};
+        const merged = Object.assign({}, remote);
+        Object.keys(local).forEach(ex => {
+          const localArr  = local[ex] || [];
+          const remoteArr = merged[ex] || [];
+          // Union by session id — keep all unique sessions, newest-date wins on clash
+          const byId = {};
+          [...remoteArr, ...localArr].forEach(s => {
+            if (!s.id) s.id = makeId();
+            if (!byId[s.id] || new Date(s.date) > new Date(byId[s.id].date)) byId[s.id] = s;
+          });
+          merged[ex] = Object.values(byId).sort((a,b) => new Date(a.date) - new Date(b.date));
+        });
+        setHistory(u, merged);
+      });
+      if (cloud.exercises) setSharedExercises(cloud.exercises);
+    }
+    await cloudSave(buildCloudPayload());
+  } else {
+    setSyncStatus(false);
+  }
+  btn.textContent = '↻ Sync now'; btn.disabled = false;
   refreshAll();
 }
 
@@ -666,8 +760,145 @@ function saveSyncKeys() {
   localStorage.setItem('liftlog_sync', JSON.stringify(syncKeys));
   document.getElementById('sync-modal').classList.add('hidden');
   document.getElementById('sync-label').textContent = 'Sync configured — saving…';
+  document.getElementById('sync-now-btn').style.display = 'block';
   cloudSave(buildCloudPayload());
 }
+
+// ── Data recovery ─────────────────────────────────────────────────────────────
+// Known safe keys — Arabic key is found by scanning all localStorage keys below
+const KNOWN_KEYS = [
+  { key: 'll_hist_Tommy', user: 'tommy', label: "Tommy (old key)" },
+  { key: 'll_hist_tommy', user: 'tommy', label: "Tommy (current)" },
+  { key: 'll_hist_wife',  user: 'wife',  label: "قطة (current)"  },
+];
+
+let recoveryData = null; // holds what we found to restore
+
+function openRecoveryModal() {
+  recoveryData = null;
+  document.getElementById('recovery-restore-btn').style.display = 'none';
+  const content = document.getElementById('recovery-content');
+  content.innerHTML = '<div style="color:#888;">Scanning…</div>';
+  document.getElementById('recovery-modal').classList.remove('hidden');
+
+  setTimeout(() => {
+    // Build full key list — brute-force scan all localStorage keys so we
+    // catch the Arabic key (ll_hist_قطة) no matter how the browser encoded it
+    const allKeys = [...KNOWN_KEYS];
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (!k || !k.startsWith('ll_hist_')) continue;
+      // If it's not one of our known keys, it must be the old Arabic one
+      if (!KNOWN_KEYS.find(e => e.key === k)) {
+        allKeys.push({ key: k, user: 'wife', label: "قطة (old key)" });
+      }
+    }
+
+    const found = {};
+    allKeys.forEach(({ key, user, label }) => {
+      try {
+        const raw = localStorage.getItem(key);
+        if (!raw) return;
+        const data = JSON.parse(raw);
+        if (!data || typeof data !== 'object') return;
+        let totalSessions = 0;
+        Object.keys(data).forEach(ex => { if (Array.isArray(data[ex])) totalSessions += data[ex].length; });
+        if (totalSessions === 0) return;
+        if (!found[user]) found[user] = [];
+        found[user].push({ key, label, data, totalSessions });
+      } catch {}
+    });
+
+    if (Object.keys(found).length === 0) {
+      content.innerHTML = '<div style="color:#888;text-align:center;padding:16px 0;">No recoverable data found in any storage key.<br><br>The sessions may have been cleared, or were only saved to cloud.</div>';
+      return;
+    }
+
+    // Build a preview and merge plan
+    let html = '';
+    let hasAnything = false;
+    recoveryData = {};
+
+    ['tommy','wife'].forEach(user => {
+      const entries = found[user];
+      if (!entries) return;
+
+      const displayName = USER_DISPLAY[currentUser === user ? user : user];
+      html += `<div style="font-weight:700;font-size:13px;color:#2255aa;margin:10px 0 4px;">${USER_DISPLAY[user]}</div>`;
+
+      // Merge all found copies for this user by session id
+      const merged = {};
+      entries.forEach(({ label, data, totalSessions }) => {
+        html += `<div style="margin-bottom:3px;">📦 <strong>${label}</strong>: ${totalSessions} session${totalSessions !== 1 ? 's' : ''} across ${Object.keys(data).length} exercise${Object.keys(data).length !== 1 ? 's' : ''}</div>`;
+        Object.keys(data).forEach(ex => {
+          if (!Array.isArray(data[ex])) return;
+          if (!merged[ex]) merged[ex] = {};
+          data[ex].forEach(s => {
+            if (!s.id) s.id = makeId();
+            merged[ex][s.id] = s;
+          });
+        });
+        hasAnything = true;
+      });
+
+      // Convert merged map back to sorted arrays
+      const mergedFinal = {};
+      Object.keys(merged).forEach(ex => {
+        mergedFinal[ex] = Object.values(merged[ex]).sort((a,b) => new Date(a.date) - new Date(b.date));
+      });
+      recoveryData[user] = mergedFinal;
+    });
+
+    if (hasAnything) {
+      html += `<div style="margin-top:14px;padding:10px;background:#eef4ff;border-radius:8px;font-size:12px;color:#334;">Tap <strong>Restore all</strong> to merge this data into your current profiles. Nothing will be deleted — existing sessions are kept too.</div>`;
+      document.getElementById('recovery-restore-btn').style.display = 'block';
+    }
+
+    content.innerHTML = html;
+  }, 80);
+}
+
+function closeRecoveryModal() {
+  document.getElementById('recovery-modal').classList.add('hidden');
+  recoveryData = null;
+}
+
+async function restoreRecoveredData() {
+  if (!recoveryData) return;
+  const btn = document.getElementById('recovery-restore-btn');
+  btn.textContent = 'Restoring…'; btn.disabled = true;
+
+  ['tommy','wife'].forEach(user => {
+    if (!recoveryData[user]) return;
+    const current = getHistory(user);
+    const recovered = recoveryData[user];
+
+    // Merge recovered into current — union by session id
+    Object.keys(recovered).forEach(ex => {
+      if (!current[ex]) current[ex] = [];
+      const existingIds = new Set(current[ex].map(s => s.id));
+      recovered[ex].forEach(s => {
+        if (!existingIds.has(s.id)) current[ex].push(s);
+      });
+      current[ex].sort((a,b) => new Date(a.date) - new Date(b.date));
+    });
+    setHistory(user, current);
+  });
+
+  if (syncKeys) await cloudSave(buildCloudPayload());
+
+  btn.textContent = 'Restored!';
+  setTimeout(() => {
+    closeRecoveryModal();
+    refreshAll();
+    showTab('history');
+    btn.textContent = 'Restore all'; btn.disabled = false;
+  }, 800);
+}
+
+document.getElementById('recovery-modal').addEventListener('click', function(e) {
+  if (e.target === this) closeRecoveryModal();
+});
 
 document.getElementById('new-ex-input').addEventListener('keydown', e => {
   if (e.key === 'Enter') addExercise();
