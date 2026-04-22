@@ -323,7 +323,22 @@ async function cloudSave(payload) {
       body: JSON.stringify(payload)
     });
     setSyncStatus(r.ok);
-  } catch { setSyncStatus(false); }
+  } catch {
+    // Network failed - queue the sync for when connection returns
+    setSyncStatus(false);
+    if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
+      navigator.serviceWorker.controller.postMessage({
+        type: 'QUEUE_SYNC',
+        payload: {
+          url: 'https://api.jsonbin.io/v3/b/' + syncKeys.bin,
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json', 'X-Master-Key': syncKeys.key },
+          body: JSON.stringify(payload)
+        }
+      });
+      document.getElementById('sync-label').textContent = 'Offline — will sync when connected';
+    }
+  }
 }
 
 function setSyncStatus(ok) {
@@ -911,6 +926,26 @@ document.getElementById('new-ex-input').addEventListener('keydown', e => {
 document.getElementById('edit-modal').addEventListener('click', function(e) {
   if (e.target === this) closeEditModal();
 });
+
+// ── Service Worker registration & background sync listener ──────────────────
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('/sw.js').then(reg => {
+    console.log('SW registered');
+  }).catch(err => console.log('SW registration failed:', err));
+
+  // Listen for background sync completion messages from SW
+  navigator.serviceWorker.addEventListener('message', event => {
+    if (event.data && event.data.type === 'SYNC_COMPLETE') {
+      const { synced, failed } = event.data;
+      if (synced > 0 && failed === 0) {
+        document.getElementById('sync-dot').className = 'sync-dot';
+        document.getElementById('sync-label').textContent = 'Synced to cloud';
+      } else if (failed > 0) {
+        document.getElementById('sync-label').textContent = 'Sync error — will retry';
+      }
+    }
+  });
+}
 
 init();
 </script>
