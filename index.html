@@ -467,8 +467,8 @@ function addSetToBlock(blockId) {
   const row       = document.createElement('div');
   row.className   = 'set-row'; row.dataset.sid = sid;
   row.innerHTML   = `<div class="set-num">${block.setCount}</div>
-    <input type="number" id="w-${sid}" placeholder="${ph.w || '—'}" min="0" step="2.5" style="font-weight:600;" />
-    <input type="number" id="r-${sid}" placeholder="${ph.r || '—'}" min="0" style="font-weight:600;" />
+    <input type="text" inputmode="decimal" id="w-${sid}" placeholder="${ph.w || '—'}" style="font-weight:600;" />
+    <input type="text" inputmode="numeric" id="r-${sid}" placeholder="${ph.r || '—'}" style="font-weight:600;" />
     <button class="ix-btn" onclick="removeSetRow(this,'${blockId}')">×</button>`;
   document.getElementById('sets-' + blockId).appendChild(row);
 }
@@ -602,8 +602,8 @@ function restoreDraft(u) {
     const setsHtml = block.sets.map(s =>
       `<div class="set-row" data-sid="${s.sid}">
         <span class="set-num col-num">${sessionBlocks.find(b=>b.blockId===block.blockId)?.setCount || ''}</span>
-        <input type="number" class="set-inp" id="w-${s.sid}" placeholder="kg" value="${s.weight}" inputmode="decimal">
-        <input type="number" class="set-inp" id="r-${s.sid}" placeholder="reps" value="${s.reps}" inputmode="numeric">
+        <input type="text" inputmode="decimal" class="set-inp" id="w-${s.sid}" placeholder="kg" value="${s.weight}">
+        <input type="text" inputmode="numeric" class="set-inp" id="r-${s.sid}" placeholder="reps" value="${s.reps}">
         <button class="btn-del-set" onclick="delSet('${block.blockId}','${s.sid}')">✕</button>
       </div>`
     ).join('');
@@ -764,8 +764,8 @@ function addEditSetRow(w, r) {
   row.className   = 'modal-set-row set-row';
   row.dataset.id  = 'e' + editSetCount;
   row.innerHTML   = `<div class="set-num">${editSetCount}</div>
-    <input type="number" id="ew-e${editSetCount}" value="${w || ''}" min="0" step="2.5" style="font-weight:600;" />
-    <input type="number" id="er-e${editSetCount}" value="${r || ''}" min="0" style="font-weight:600;" />
+    <input type="text" inputmode="decimal" id="ew-e${editSetCount}" value="${w || ''}" style="font-weight:600;" />
+    <input type="text" inputmode="numeric" id="er-e${editSetCount}" value="${r || ''}" style="font-weight:600;" />
     <button class="ix-btn" onclick="this.closest('.modal-set-row').remove()">×</button>`;
   document.getElementById('edit-sets-container').appendChild(row);
 }
