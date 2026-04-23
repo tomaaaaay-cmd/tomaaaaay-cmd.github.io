@@ -815,7 +815,7 @@ function renderManage() {
     } else {
       exList.forEach((ex, i) => {
         html += `<div class="manage-item">
-          <span style="font-size:14px;font-weight:500;">${ex}</span>
+          <span style="font-size:14px;font-weight:500;color:var(--olive-light);">${ex}</span>
           <button class="ix-btn" onclick="deleteExercise('${group}',${i})">×</button>
         </div>`;
       });
