@@ -406,6 +406,7 @@ async function syncNow() {
 // ── Session builder ─────────────────────────────────────────────────────────
 let sessionBlocks    = [];
 let globalSetCounter = 0;
+let userDrafts       = { tommy: null, wife: null }; // saves in-progress sessions per user
 
 function addExerciseBlock() {
   const sel = document.getElementById('exercise-picker');
@@ -539,16 +540,103 @@ async function saveWorkout() {
   if (syncKeys) await cloudSave(buildCloudPayload());
   btn.textContent = 'Saved!';
   clearSession();
+  userDrafts[saveUser] = null;
   setTimeout(() => { btn.textContent = 'Save session'; btn.disabled = false; }, 1500);
 }
 
 // ── User / muscle switching ─────────────────────────────────────────────────
+function saveDraft(u) {
+  // Capture current form values for each set row
+  const blocks = sessionBlocks.map(block => {
+    const rows = document.querySelectorAll('#sets-' + block.blockId + ' .set-row');
+    const sets = [];
+    rows.forEach(row => {
+      const sid = row.dataset.sid;
+      sets.push({
+        sid,
+        weight: document.getElementById('w-' + sid)?.value || '',
+        reps:   document.getElementById('r-' + sid)?.value || ''
+      });
+    });
+    return { ex: block.ex, blockId: block.blockId, setCount: block.setCount, sets };
+  });
+  userDrafts[u] = {
+    blocks,
+    picker: document.getElementById('exercise-picker').value,
+    setCounter: globalSetCounter
+  };
+}
+
+function restoreDraft(u) {
+  const draft = userDrafts[u];
+  sessionBlocks = [];
+  globalSetCounter = 0;
+  document.getElementById('session-exercises').innerHTML = '';
+  document.getElementById('exercise-picker').value = '';
+
+  if (!draft || !draft.blocks.length) return;
+
+  globalSetCounter = draft.setCounter;
+  document.getElementById('exercise-picker').value = draft.picker;
+
+  draft.blocks.forEach(block => {
+    sessionBlocks.push({ ex: block.ex, blockId: block.blockId, setCount: block.setCount });
+
+    const hist = getHistory(u);
+    const lastSession = (hist[block.ex] || []).slice(-1)[0] || null;
+    const pr = getPR(block.ex, hist);
+
+    const container = document.getElementById('session-exercises');
+    const card      = document.createElement('div');
+    card.className  = 'card'; card.id = block.blockId; card.style.marginBottom = '10px';
+
+    const prevHtml = lastSession
+      ? `<div class="prev-box" style="margin-bottom:10px;">
+          <div>
+            <div class="prev-label">Last session</div>
+            <div class="prev-text">${lastSession.sets.map(s => s.weight + 'kg×' + s.reps).join(' · ')}</div>
+          </div>
+          ${pr ? `<span class="pr-badge">PR ${pr.weight}kg×${pr.reps}</span>` : ''}
+        </div>` : '';
+
+    const setsHtml = block.sets.map(s =>
+      `<div class="set-row" data-sid="${s.sid}">
+        <span class="set-num col-num">${sessionBlocks.find(b=>b.blockId===block.blockId)?.setCount || ''}</span>
+        <input type="number" class="set-inp" id="w-${s.sid}" placeholder="kg" value="${s.weight}" inputmode="decimal">
+        <input type="number" class="set-inp" id="r-${s.sid}" placeholder="reps" value="${s.reps}" inputmode="numeric">
+        <button class="btn-del-set" onclick="delSet('${block.blockId}','${s.sid}')">✕</button>
+      </div>`
+    ).join('');
+
+    card.innerHTML = `
+      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
+        <span class="card-title" style="margin:0;">${block.ex}</span>
+        <button class="btn-sm" style="padding:4px 10px;font-size:11px;color:#e74c3c;border-color:#e74c3c;" onclick="removeBlock('${block.blockId}')">Remove</button>
+      </div>
+      ${prevHtml}
+      <div class="col-headers"><span class="col-lbl">Set</span><span class="col-lbl">Weight</span><span class="col-lbl">Reps</span><span></span></div>
+      <div id="sets-${block.blockId}">${setsHtml}</div>
+      <button class="btn-add-set" onclick="addSet('${block.blockId}')">+ Add set</button>`;
+    container.appendChild(card);
+  });
+
+  // Fix set numbers after restore
+  draft.blocks.forEach((block, bi) => {
+    const rows = document.querySelectorAll('#sets-' + block.blockId + ' .set-row');
+    rows.forEach((row, i) => {
+      row.querySelector('.set-num').textContent = i + 1;
+    });
+    sessionBlocks[bi].setCount = block.sets.length;
+  });
+}
+
 function switchUser(u) {
+  saveDraft(currentUser);
   currentUser = u;
   document.getElementById('btn-tommy').classList.toggle('active', u === 'tommy');
   document.getElementById('btn-wife').classList.toggle('active', u === 'wife');
   document.getElementById('app').classList.toggle('theme-wife', u === 'wife');
-  clearSession();
+  restoreDraft(u);
   refreshAll();
 }
 
