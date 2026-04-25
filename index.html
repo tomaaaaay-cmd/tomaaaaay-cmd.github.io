@@ -346,11 +346,24 @@ function setSyncStatus(ok) {
   document.getElementById('sync-label').textContent = ok ? 'Synced to cloud' : 'Sync error — check keys';
 }
 
+function mergeHistories(local, remote) {
+  const merged = Object.assign({}, remote);
+  Object.keys(local).forEach(ex => {
+    const localArr  = local[ex] || [];
+    const remoteArr = merged[ex] || [];
+    const byId = {};
+    [...remoteArr, ...localArr].forEach(s => {
+      if (!s.id) s.id = makeId();
+      if (!byId[s.id] || new Date(s.date) > new Date(byId[s.id].date)) byId[s.id] = s;
+    });
+    merged[ex] = Object.values(byId).sort((a, b) => new Date(a.date) - new Date(b.date));
+  });
+  return merged;
+}
+
 async function init() {
   loadSyncKeys();
   initSharedExercises();
-
-  // Migrate any data saved by the old version before touching cloud
   migrateOldData();
 
   if (syncKeys) {
@@ -358,9 +371,13 @@ async function init() {
     document.getElementById('sync-label').textContent = 'Loading from cloud…';
     const cloud = await cloudLoad();
     if (cloud) {
-      if (cloud.exercises)   setSharedExercises(cloud.exercises);
-      if (cloud.hist_tommy)  setHistory('tommy', cloud.hist_tommy);
-      if (cloud.hist_wife)   setHistory('wife',  cloud.hist_wife);
+      ['tommy', 'wife'].forEach(u => {
+        const local  = getHistory(u);
+        const remote = cloud['hist_' + u] || {};
+        setHistory(u, mergeHistories(local, remote));
+      });
+      if (cloud.exercises) setSharedExercises(cloud.exercises);
+      await cloudSave(buildCloudPayload());
       setSyncStatus(true);
     } else { setSyncStatus(false); }
   }
@@ -371,31 +388,17 @@ async function syncNow() {
   const btn = document.getElementById('sync-now-btn');
   btn.textContent = '↻ Syncing…'; btn.disabled = true;
   if (syncKeys) {
-    // Push local → cloud first, then pull cloud → local
-    // This ensures both phones converge on the same data
     const cloud = await cloudLoad();
     if (cloud) {
-      // Merge: for each user, keep whichever copy has more sessions per exercise
-      ['tommy','wife'].forEach(u => {
-        const local = getHistory(u);
+      ['tommy', 'wife'].forEach(u => {
+        const local  = getHistory(u);
         const remote = cloud['hist_' + u] || {};
-        const merged = Object.assign({}, remote);
-        Object.keys(local).forEach(ex => {
-          const localArr  = local[ex] || [];
-          const remoteArr = merged[ex] || [];
-          // Union by session id — keep all unique sessions, newest-date wins on clash
-          const byId = {};
-          [...remoteArr, ...localArr].forEach(s => {
-            if (!s.id) s.id = makeId();
-            if (!byId[s.id] || new Date(s.date) > new Date(byId[s.id].date)) byId[s.id] = s;
-          });
-          merged[ex] = Object.values(byId).sort((a,b) => new Date(a.date) - new Date(b.date));
-        });
-        setHistory(u, merged);
+        setHistory(u, mergeHistories(local, remote));
       });
       if (cloud.exercises) setSharedExercises(cloud.exercises);
     }
     await cloudSave(buildCloudPayload());
+    setSyncStatus(true);
   } else {
     setSyncStatus(false);
   }
