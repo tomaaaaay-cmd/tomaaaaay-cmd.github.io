@@ -314,17 +314,40 @@ async function cloudLoad() {
   } catch { return null; }
 }
 
-async function cloudSave(payload) {
+// Debounced cloud save with upload lock
+// Waits 3 seconds after last save before pushing, and won't start a new
+// upload if one is already in progress — queues it to run after instead
+let cloudSaveTimer  = null;
+let cloudSaveActive = false;
+let cloudSavePending = false;
+
+function cloudSave() {
   if (!syncKeys) return;
+  document.getElementById('sync-label').textContent = 'Saving…';
+
+  clearTimeout(cloudSaveTimer);
+  cloudSaveTimer = setTimeout(async () => {
+    if (cloudSaveActive) {
+      // Upload already in progress — flag to re-run after it finishes
+      cloudSavePending = true;
+      return;
+    }
+    await doCloudSave();
+  }, 3000);
+}
+
+async function doCloudSave() {
+  cloudSaveActive = true;
+  cloudSavePending = false;
+  const toSave = buildCloudPayload(); // Always build fresh at push time
   try {
     const r = await fetch('https://api.jsonbin.io/v3/b/' + syncKeys.bin, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json', 'X-Master-Key': syncKeys.key },
-      body: JSON.stringify(payload)
+      body: JSON.stringify(toSave)
     });
     setSyncStatus(r.ok);
   } catch {
-    // Network failed - queue the sync for when connection returns
     setSyncStatus(false);
     if ('serviceWorker' in navigator && navigator.serviceWorker.controller) {
       navigator.serviceWorker.controller.postMessage({
@@ -333,11 +356,16 @@ async function cloudSave(payload) {
           url: 'https://api.jsonbin.io/v3/b/' + syncKeys.bin,
           method: 'PUT',
           headers: { 'Content-Type': 'application/json', 'X-Master-Key': syncKeys.key },
-          body: JSON.stringify(payload)
+          body: JSON.stringify(toSave)
         }
       });
       document.getElementById('sync-label').textContent = 'Offline — will sync when connected';
     }
+  }
+  cloudSaveActive = false;
+  // If a save was requested while we were uploading, run it now
+  if (cloudSavePending) {
+    await doCloudSave();
   }
 }
 
@@ -377,7 +405,6 @@ async function init() {
         setHistory(u, mergeHistories(local, remote));
       });
       if (cloud.exercises) setSharedExercises(cloud.exercises);
-      await cloudSave(buildCloudPayload());
       setSyncStatus(true);
     } else { setSyncStatus(false); }
   }
@@ -397,7 +424,7 @@ async function syncNow() {
       });
       if (cloud.exercises) setSharedExercises(cloud.exercises);
     }
-    await cloudSave(buildCloudPayload());
+    cloudSave();
     setSyncStatus(true);
   } else {
     setSyncStatus(false);
@@ -540,7 +567,7 @@ async function saveWorkout() {
 
   const btn = document.getElementById('save-btn');
   btn.textContent = 'Saving…'; btn.disabled = true;
-  if (syncKeys) await cloudSave(buildCloudPayload());
+  if (syncKeys) cloudSave();
   btn.textContent = 'Saved!';
   clearSession();
   userDrafts[saveUser] = null;
@@ -790,7 +817,7 @@ async function saveEditSession() {
   arr[idx].sets = sets;
   setHistory(currentUser, hist);
 
-  if (syncKeys) await cloudSave(buildCloudPayload());
+  if (syncKeys) cloudSave();
   closeEditModal();
   renderHistory();
 }
@@ -802,7 +829,7 @@ async function deleteSession(ex, sessionId) {
     arr.splice(idx, 1);
     setHistory(currentUser, hist);
   }
-  if (syncKeys) await cloudSave(buildCloudPayload());
+  if (syncKeys) cloudSave();
   renderHistory();
 }
 
@@ -832,7 +859,7 @@ function renderManage() {
 async function clearMyHistory() {
   if (!confirm(`Clear ALL workout history for ${USER_DISPLAY[currentUser]}? This cannot be undone.`)) return;
   setHistory(currentUser, {});
-  if (syncKeys) await cloudSave(buildCloudPayload());
+  if (syncKeys) cloudSave();
   renderHistory();
 }
 
@@ -872,7 +899,7 @@ function saveSyncKeys() {
   document.getElementById('sync-modal').classList.add('hidden');
   document.getElementById('sync-label').textContent = 'Sync configured — saving…';
   document.getElementById('sync-now-btn').style.display = 'block';
-  cloudSave(buildCloudPayload());
+  cloudSave();
 }
 
 // ── Data recovery ─────────────────────────────────────────────────────────────
@@ -996,7 +1023,7 @@ async function restoreRecoveredData() {
     setHistory(user, current);
   });
 
-  if (syncKeys) await cloudSave(buildCloudPayload());
+  if (syncKeys) cloudSave();
 
   btn.textContent = 'Restored!';
   setTimeout(() => {
