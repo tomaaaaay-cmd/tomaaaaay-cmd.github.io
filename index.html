@@ -123,9 +123,17 @@ input:focus,select:focus{outline:none;border-color:var(--olive);box-shadow:0 0 0
       <div class="card">
         <div class="card-title">My exercises</div>
         <div id="exercise-list"></div>
-        <div class="add-row">
-          <input type="text" id="new-ex-input" placeholder="Add exercise…" />
-          <button class="btn-sm" onclick="addExercise()">Add</button>
+        <div class="add-row" style="flex-direction:column;gap:6px;">
+          <select id="new-ex-muscle" style="width:100%;padding:8px 10px;border-radius:6px;border:1px solid #444;background:#333;font-family:var(--font);font-size:14px;color:#eee;">
+            <option value="Back">Back</option>
+            <option value="Chest">Chest</option>
+            <option value="Legs">Legs</option>
+            <option value="Shoulders">Shoulders</option>
+          </select>
+          <div style="display:flex;gap:8px;">
+            <input type="text" id="new-ex-input" placeholder="Add exercise…" />
+            <button class="btn-sm" onclick="addExercise()">Add</button>
+          </div>
         </div>
       </div>
       <div class="card" style="margin-top:0;">
@@ -264,13 +272,19 @@ const DEFAULT_EXERCISES = {
 };
 
 // ── Shared exercises ────────────────────────────────────────────────────────
+let _exerciseCache = null;
 function getSharedExercises() {
   try { return JSON.parse(localStorage.getItem('ll_exercises') || 'null'); } catch { return null; }
 }
-function setSharedExercises(d) { localStorage.setItem('ll_exercises', JSON.stringify(d)); }
+function setSharedExercises(d) {
+  _exerciseCache = d;
+  localStorage.setItem('ll_exercises', JSON.stringify(d));
+}
 function initSharedExercises() {
+  if (_exerciseCache) return _exerciseCache;
   let ex = getSharedExercises();
   if (!ex) { ex = JSON.parse(JSON.stringify(DEFAULT_EXERCISES)); setSharedExercises(ex); }
+  _exerciseCache = ex;
   return ex;
 }
 
@@ -315,31 +329,24 @@ async function cloudLoad() {
 }
 
 // Debounced cloud save with upload lock
-// Waits 3 seconds after last save before pushing, and won't start a new
-// upload if one is already in progress — queues it to run after instead
-let cloudSaveTimer  = null;
-let cloudSaveActive = false;
+let cloudSaveTimer   = null;
+let cloudSaveActive  = false;
 let cloudSavePending = false;
 
 function cloudSave() {
   if (!syncKeys) return;
   document.getElementById('sync-label').textContent = 'Saving…';
-
   clearTimeout(cloudSaveTimer);
   cloudSaveTimer = setTimeout(async () => {
-    if (cloudSaveActive) {
-      // Upload already in progress — flag to re-run after it finishes
-      cloudSavePending = true;
-      return;
-    }
+    if (cloudSaveActive) { cloudSavePending = true; return; }
     await doCloudSave();
   }, 3000);
 }
 
 async function doCloudSave() {
-  cloudSaveActive = true;
+  cloudSaveActive  = true;
   cloudSavePending = false;
-  const toSave = buildCloudPayload(); // Always build fresh at push time
+  const toSave = buildCloudPayload();
   try {
     const r = await fetch('https://api.jsonbin.io/v3/b/' + syncKeys.bin, {
       method: 'PUT',
@@ -363,10 +370,7 @@ async function doCloudSave() {
     }
   }
   cloudSaveActive = false;
-  // If a save was requested while we were uploading, run it now
-  if (cloudSavePending) {
-    await doCloudSave();
-  }
+  if (cloudSavePending) await doCloudSave();
 }
 
 function setSyncStatus(ok) {
@@ -423,20 +427,24 @@ async function syncNow() {
         setHistory(u, mergeHistories(local, remote));
       });
       if (cloud.exercises) setSharedExercises(cloud.exercises);
+      setSyncStatus(true);
+    } else {
+      setSyncStatus(false);
     }
+    // Re-enable button after debounce delay so it reflects upload completing
     cloudSave();
-    setSyncStatus(true);
+    setTimeout(() => { btn.textContent = '↻ Sync now'; btn.disabled = false; }, 3500);
   } else {
     setSyncStatus(false);
+    btn.textContent = '↻ Sync now'; btn.disabled = false;
   }
-  btn.textContent = '↻ Sync now'; btn.disabled = false;
   refreshAll();
 }
 
 // ── Session builder ─────────────────────────────────────────────────────────
 let sessionBlocks    = [];
 let globalSetCounter = 0;
-let userDrafts       = { tommy: null, wife: null }; // saves in-progress sessions per user
+let userDrafts       = { tommy: null, wife: null };
 
 function addExerciseBlock() {
   const sel = document.getElementById('exercise-picker');
@@ -576,7 +584,6 @@ async function saveWorkout() {
 
 // ── User / muscle switching ─────────────────────────────────────────────────
 function saveDraft(u) {
-  // Capture current form values for each set row
   const blocks = sessionBlocks.map(block => {
     const rows = document.querySelectorAll('#sets-' + block.blockId + ' .set-row');
     const sets = [];
@@ -590,74 +597,51 @@ function saveDraft(u) {
     });
     return { ex: block.ex, blockId: block.blockId, setCount: block.setCount, sets };
   });
-  userDrafts[u] = {
-    blocks,
-    picker: document.getElementById('exercise-picker').value,
-    setCounter: globalSetCounter
-  };
+  userDrafts[u] = { blocks, picker: document.getElementById('exercise-picker').value, setCounter: globalSetCounter };
 }
 
 function restoreDraft(u) {
   const draft = userDrafts[u];
-  sessionBlocks = [];
-  globalSetCounter = 0;
+  sessionBlocks = []; globalSetCounter = 0;
   document.getElementById('session-exercises').innerHTML = '';
   document.getElementById('exercise-picker').value = '';
-
   if (!draft || !draft.blocks.length) return;
 
-  globalSetCounter = draft.setCounter;
   document.getElementById('exercise-picker').value = draft.picker;
 
+  // Reuse addExerciseBlock to build each card — single source of truth for card HTML
   draft.blocks.forEach(block => {
-    sessionBlocks.push({ ex: block.ex, blockId: block.blockId, setCount: block.setCount });
+    // Temporarily add exercise to picker so addExerciseBlock can find it
+    const sel = document.getElementById('exercise-picker');
+    let opt = sel.querySelector(`option[value="${block.ex}"]`);
+    if (!opt) {
+      opt = document.createElement('option');
+      opt.value = block.ex; opt.textContent = block.ex;
+      sel.appendChild(opt);
+    }
+    sel.value = block.ex;
+    addExerciseBlock();
 
-    const hist = getHistory(u);
-    const lastSession = (hist[block.ex] || []).slice(-1)[0] || null;
-    const pr = getPR(block.ex, hist);
+    // Find the block we just added and restore saved values
+    const newBlock = sessionBlocks[sessionBlocks.length - 1];
+    const setRows  = document.querySelectorAll('#sets-' + newBlock.blockId + ' .set-row');
 
-    const container = document.getElementById('session-exercises');
-    const card      = document.createElement('div');
-    card.className  = 'card'; card.id = block.blockId; card.style.marginBottom = '10px';
-
-    const prevHtml = lastSession
-      ? `<div class="prev-box" style="margin-bottom:10px;">
-          <div>
-            <div class="prev-label">Last session</div>
-            <div class="prev-text">${lastSession.sets.map(s => s.weight + 'kg×' + s.reps).join(' · ')}</div>
-          </div>
-          ${pr ? `<span class="pr-badge">PR ${pr.weight}kg×${pr.reps}</span>` : ''}
-        </div>` : '';
-
-    const setsHtml = block.sets.map(s =>
-      `<div class="set-row" data-sid="${s.sid}">
-        <span class="set-num col-num">${sessionBlocks.find(b=>b.blockId===block.blockId)?.setCount || ''}</span>
-        <input type="text" inputmode="decimal" class="set-inp" id="w-${s.sid}" placeholder="kg" value="${s.weight}">
-        <input type="text" inputmode="numeric" class="set-inp" id="r-${s.sid}" placeholder="reps" value="${s.reps}">
-        <button class="btn-del-set" onclick="delSet('${block.blockId}','${s.sid}')">✕</button>
-      </div>`
-    ).join('');
-
-    card.innerHTML = `
-      <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px;">
-        <span class="card-title" style="margin:0;">${block.ex}</span>
-        <button class="btn-sm" style="padding:4px 10px;font-size:11px;color:#e74c3c;border-color:#e74c3c;" onclick="removeBlock('${block.blockId}')">Remove</button>
-      </div>
-      ${prevHtml}
-      <div class="col-headers"><span class="col-lbl">Set</span><span class="col-lbl">Weight</span><span class="col-lbl">Reps</span><span></span></div>
-      <div id="sets-${block.blockId}">${setsHtml}</div>
-      <button class="btn-add-set" onclick="addSet('${block.blockId}')">+ Add set</button>`;
-    container.appendChild(card);
-  });
-
-  // Fix set numbers after restore
-  draft.blocks.forEach((block, bi) => {
-    const rows = document.querySelectorAll('#sets-' + block.blockId + ' .set-row');
-    rows.forEach((row, i) => {
-      row.querySelector('.set-num').textContent = i + 1;
+    // Add or remove sets to match saved count
+    while (setRows.length < block.sets.length) addSetToBlock(newBlock.blockId);
+    const finalRows = document.querySelectorAll('#sets-' + newBlock.blockId + ' .set-row');
+    finalRows.forEach((row, i) => {
+      const sid = row.dataset.sid;
+      const saved = block.sets[i];
+      if (saved) {
+        const wEl = document.getElementById('w-' + sid);
+        const rEl = document.getElementById('r-' + sid);
+        if (wEl) wEl.value = saved.weight;
+        if (rEl) rEl.value = saved.reps;
+      }
     });
-    sessionBlocks[bi].setCount = block.sets.length;
   });
+
+  document.getElementById('exercise-picker').value = draft.picker;
 }
 
 function switchUser(u) {
@@ -677,7 +661,10 @@ function switchMuscle(m) {
   });
   populatePickers();
   clearSession();
-  renderHistory();
+  // Only re-render history if the history tab is currently visible
+  if (!document.getElementById('tab-history').classList.contains('hidden')) {
+    renderHistory();
+  }
 }
 
 function showTab(t) {
@@ -706,7 +693,14 @@ function populatePickers() {
 function renderHistory() {
   const list      = document.getElementById('history-list');
   const hist      = getHistory(currentUser);
-  const exercises = (initSharedExercises()[currentMuscle] || []);
+  // Show exercises from defined list PLUS any exercises in history
+  // that have sessions but aren't in the current list (e.g. after a bad sync
+  // wiped custom exercises, history data is still there and should still show)
+  const definedExercises = (initSharedExercises()[currentMuscle] || []);
+  const historyExercises = Object.keys(hist).filter(ex =>
+    !definedExercises.includes(ex) && (hist[ex] || []).length > 0
+  );
+  const exercises = [...new Set([...definedExercises, ...historyExercises])];
 
   // Group by calendar day
   const dayMap = {};
@@ -845,14 +839,14 @@ function renderManage() {
     } else {
       exList.forEach((ex, i) => {
         html += `<div class="manage-item">
-          <span style="font-size:14px;font-weight:500;color:var(--olive-light);">${ex}</span>
+          <span style="font-size:14px;font-weight:500;">${ex}</span>
           <button class="ix-btn" onclick="deleteExercise('${group}',${i})">×</button>
         </div>`;
       });
     }
   });
   document.getElementById('exercise-list').innerHTML = html;
-  document.getElementById('new-ex-input').placeholder = `Add to ${currentMuscle}…`;
+  document.getElementById('new-ex-muscle').value = currentMuscle;
   document.getElementById('danger-user-label').textContent = USER_DISPLAY[currentUser];
 }
 
@@ -864,13 +858,15 @@ async function clearMyHistory() {
 }
 
 function addExercise() {
-  const inp  = document.getElementById('new-ex-input');
-  const name = inp.value.trim(); if (!name) return;
+  const inp    = document.getElementById('new-ex-input');
+  const muscle = document.getElementById('new-ex-muscle').value;
+  const name   = inp.value.trim(); if (!name) return;
   const exData = initSharedExercises();
-  if (!exData[currentMuscle]) exData[currentMuscle] = [];
-  if (!exData[currentMuscle].includes(name)) {
-    exData[currentMuscle].push(name);
+  if (!exData[muscle]) exData[muscle] = [];
+  if (!exData[muscle].includes(name)) {
+    exData[muscle].push(name);
     setSharedExercises(exData);
+    if (syncKeys) cloudSave();
     inp.value = '';
     renderManage();
     populatePickers();
@@ -879,7 +875,9 @@ function addExercise() {
 
 function deleteExercise(group, i) {
   const exData = initSharedExercises(); exData[group].splice(i, 1);
-  setSharedExercises(exData); renderManage(); populatePickers();
+  setSharedExercises(exData);
+  if (syncKeys) cloudSave();
+  renderManage(); populatePickers();
 }
 
 // ── Sync UI ──────────────────────────────────────────────────────────────────
@@ -1047,11 +1045,10 @@ document.getElementById('edit-modal').addEventListener('click', function(e) {
 
 // ── Service Worker registration & background sync listener ──────────────────
 if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.register('/sw.js').then(reg => {
+  navigator.serviceWorker.register('/sw.js').then(() => {
     console.log('SW registered');
   }).catch(err => console.log('SW registration failed:', err));
 
-  // Listen for background sync completion messages from SW
   navigator.serviceWorker.addEventListener('message', event => {
     if (event.data && event.data.type === 'SYNC_COMPLETE') {
       const { synced, failed } = event.data;
